@@ -6,6 +6,7 @@
 ## Update history
 ## - 7.14.17: created final file (YD)
 ## - 7.17.17: minor edits during error checking (YD)
+## - 8.1.18: added aggregated analysis of all studies
 
 #### Setup ####
 
@@ -398,3 +399,148 @@ summary(Study5finalRew2)
 longStudy5rew2 %>%
   group_by(target) %>%
   summarise(avg = mean(response))
+
+
+#### Aggregated across studies ####
+
+# convert to long
+allLong <- raw %>%
+  dplyr::select(ID,AgeCentered,Study,AgeinMonths,AgeCat,10:13,22:25) %>%
+  filter(AgeinMonths < 72 | AgeinMonths > 108) %>% 
+  gather(condition,response,Original_FR_Judgment:Original_Con_Preference, Comparison_FR_Judgment:Comparison_Con_Preference) %>%
+  filter(!is.na(response)) %>%
+  filter(!(Study %in% c(1,2) & substr(condition,1,3) == 'Com')) %>%
+  mutate (target=ifelse(grepl("FR",condition),"FreeRider","Contributor"),
+          age=ifelse(AgeCat==1,'Young','Old'),
+          study=as.factor(Study))
+
+# number of unique subjects
+length(unique(allLong$ID))
+
+# Main model
+options(contrasts = c("contr.SAS", "contr.SAS"))  # relevel default levels to contributor and young
+M1 <- lmer(response ~ age*target + (1|ID) + (age + target|study), data=allLong)
+summary(M1)
+drop1(M1,test='Chisq')
+summary(M1)
+
+# get CIs
+fixef(M1)["targetContributor"] + c(-1.96,1.96)*se.fixef(M1)["targetContributor"]
+fixef(M1)["ageOld"] + c(-1.96,1.96)*se.fixef(M1)["ageOld"]
+fixef(M1)["ageOld:targetContributor"] + c(-1.96,1.96)*se.fixef(M1)["ageOld:targetContributor"]
+
+
+# means and effect sizes, by age group
+allLong %>%
+  group_by(age,target) %>%
+  summarise(avg = mean(response))
+# compute d
+cohen.d(response ~ target, data=filter(allLong,age=='Young')) 
+cohen.d(response ~ target, data=filter(allLong,age=='Old')) 
+
+
+#### Paper Figures ####
+
+# NOTE: This includes Figure 1 and Figure 7 only
+
+# Study1
+substrRight <- function(x, n){substr(x, nchar(x)-n+1, nchar(x))}
+longStudy1Graph <- Study1 %>%
+  dplyr::select(ID,10:13,22:25) %>% 
+  gather(condition,response,Original_FR_Judgment:Original_Con_Preference, Comparison_FR_Judgment:Comparison_Con_Preference) %>% 
+  mutate(Ttype=substr(condition,1,2)) %>% #Ttype is testing condition
+  mutate (Ctype=ifelse(grepl("FR",condition),"FreeRider","Contributor")) #Ctype is Character/Target type
+
+longStudy1Graph$Ttype<-factor(longStudy1Graph$Ttype,levels=c("Or","Co"))#Change the order for Ttype
+longStudy1Graph$Ctype<-factor(longStudy1Graph$Ctype,levels=c("FreeRider","Contributor"))#change the order for Ctype
+
+graph1 <- ggplot(longStudy1Graph,aes(x=Ctype, y = response, width=.65, fill = as.factor(Ttype))) +
+  stat_summary(fun.y=mean, geom="bar", size=4, position=position_dodge()) + 
+  stat_summary(fun.data="mean_cl_boot", geom="errorbar",  aes(width=.15), position=position_dodge(.65)) 
+
+graph1<-(graph1 + scale_fill_discrete(breaks=c("Co", "Or"),labels=c("Unintentional Free Riding", "Intentional Free Riding")) +
+           theme(legend.title=element_blank()) + 
+           scale_x_discrete(breaks=c("Contributor", "FreeRider"),labels=c("Contributor", "Free Rider")) + 
+           coord_cartesian(ylim=c(1,4)) +
+           ylab("Rating (1 = most negative, 4 = most positive)") +
+           xlab("Target") +
+           theme_bw() + theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+           theme(legend.title=element_blank()) +
+           scale_fill_manual(values=c("#99CC99", "#FFCC99"),breaks=c("Co", "Or"),labels=c("Unintentional Free Riding", "Intentional Free Riding")) +
+           geom_hline(yintercept = 2.5, linetype=2, color='black')+
+           guides(fill = guide_legend(reverse = TRUE))+ #reverse the legend order
+           ggtitle("a") + theme(plot.title=element_text(hjust = 0.5, face="bold"))+
+           theme(legend.position=c(0.5,0.98)) +
+           theme(legend.direction="horizontal")+
+           theme(plot.title = element_text(size = 25, face = "bold") , legend.text=element_text(size=14))+
+           theme(axis.text=element_text(size=14,face="bold"), axis.title=element_text(size=16,face="bold")))
+graph1
+
+# Study2
+substrRight <- function(x, n){substr(x, nchar(x)-n+1, nchar(x))}
+longStudy2Graph <- Study2 %>%
+  dplyr::select(ID,10:13,22:25) %>% 
+  gather(condition,response,Original_FR_Judgment:Original_Con_Preference, Comparison_FR_Judgment:Comparison_Con_Preference) %>% 
+  mutate(Ttype=substr(condition,1,2)) %>%
+  mutate (Ctype=ifelse(grepl("FR",condition),"FreeRider","Contributor")) 
+
+longStudy2Graph$Ttype<-factor(longStudy2Graph$Ttype,levels=c("Or","Co"))#Change the order for Ttype
+longStudy2Graph$Ctype<-factor(longStudy2Graph$Ctype,levels=c("FreeRider","Contributor"))#change the order for Ctype
+
+reordergraph2 <- ggplot(longStudy2Graph,aes(x=Ctype, y = response, width=.65, fill = as.factor(Ttype))) +
+  stat_summary(fun.y=mean, geom="bar", size=4, position=position_dodge()) + 
+  stat_summary(fun.data="mean_cl_boot", geom="errorbar",  aes(width=.15), position=position_dodge(.65)) 
+reordergraph2
+
+#Modify Styles##
+graph2<-(reordergraph2 + scale_fill_discrete(breaks=c("Co", "Or"),labels=c("Unintentional Free Riding", "Intentional Free Riding")) +
+           theme(legend.title=element_blank()) + 
+           scale_x_discrete(breaks=c("Contributor", "FreeRider"),labels=c("Contributor", "Free Rider")) + 
+           coord_cartesian(ylim=c(1,4)) +
+           ylab("Rating (1 = most negative, 4 = most positive)") +
+           xlab("Target") +
+           theme_bw() + theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+           theme(legend.title=element_blank()) +
+           scale_fill_manual(values=c("#99CC99", "#FFCC99"),breaks=c("Co", "Or"),labels=c("Unintentional Free Riding", "Intentional Free Riding")) +
+           geom_hline(yintercept = 2.5, linetype=2, color='black')+
+           guides(fill = guide_legend(reverse = TRUE))+ #reverse the legend order
+           ggtitle("b") + theme(plot.title=element_text(hjust = 0.5, face="bold"))+
+           theme(legend.position=c(0.5,0.98)) +
+           theme(legend.direction="horizontal")+
+           theme(plot.title = element_text(size = 25, face = "bold") , legend.text=element_text(size=14))+
+           theme(axis.text=element_text(size=14,face="bold"), axis.title=element_text(size=16,face="bold")))
+graph2
+
+
+# figure 7, aggregated
+
+#### Final aggregated graph ####
+
+
+allLong$target2<-factor(allLong$target,levels=c("FreeRider","Contributor"))#change the order for Ctype
+allLong$age2<-factor(allLong$age,levels=c("Young","Old"))#change the order for Ctype
+
+frame <- ggplot(allLong,aes(x=target2,y=response,fill=age2, width=.65)) +  
+  stat_summary(fun.y=mean, geom="bar", size=4, position = position_dodge()) +
+  stat_summary(fun.data="mean_cl_boot", geom="errorbar", aes(width=.15), position=position_dodge(.65))
+
+graph7 <- frame +   theme(legend.title=element_blank()) + 
+  scale_x_discrete(breaks=c("Contributor", "FreeRider"),labels=c("Contributor", "Free Rider")) + 
+  coord_cartesian(ylim=c(1,4)) +
+  ylab("Rating (1 = most negative, 4 = most positive)") +
+  xlab("Target") +
+  theme_bw() + theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) +
+  theme(legend.title=element_blank()) +
+  scale_fill_manual(values=c("#99CC99", "#FFCC99"),breaks=c("Young", "Old"),labels=c("4-5-yr-olds", "9-10-yr-olds")) +
+  geom_hline(yintercept = 2.5, linetype=2, color='black') +
+  theme(plot.title=element_text(hjust = 0.5, face="bold")) +
+  theme(legend.position=c(0.5,0.98)) +
+  theme(legend.direction="horizontal") +
+  theme(plot.title = element_text(size = 25, face = "bold") , legend.text=element_text(size=14))+
+  theme(axis.text=element_text(size=14,face="bold"), axis.title=element_text(size=16,face="bold")) 
+graph7
+
+
+
+
+
