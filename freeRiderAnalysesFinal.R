@@ -7,19 +7,23 @@
 ## - 7.14.17: created final file (YD)
 ## - 7.17.17: minor edits during error checking (YD)
 ## - 8.1.18: added aggregated analysis of all studies
+## - 4.16.16: added Study 6 and updated figures
 
 #### Setup ####
 
 # required packages
 library(tidyverse)   # 1.00
-library(lme4)  # lmer / glmer  1.1-12
-library(effsize) # cohens d calculator  0.7.0
+library(lme4)  # lmer / glmer  1.1-16
+library(effsize) # cohens d calculator  0.7.1
 library(optimx) # additional optimizers for glmer  2013.8.7
 
 
-# read data
-setwd("~/Documents/Active Projects/Fan Yang Projects/Free Riders/data")
-raw <- read.csv('freeRiderAllData.csv')
+# read data: Studies 1-5
+raw <- read.csv('Studies1-5Data.csv')
+
+#read data: Study 6
+Study6 <- read.csv('Study6Data.csv')
+
 
 # subset to study datasets
 Study1 <- subset(raw,Study==1) 
@@ -326,13 +330,6 @@ longStudy5pun %>%
 # Contrib: 13 v 3; FR: 36 v 44
 # So contrib punished a little more in no outcome while FR punished a little more in outcome
 
-# quick plot: shows main effect of cost across the facets, hint of interaction w/in facets
-# though clearer if you drop the faceting
-ggplot(longStudy5pun,aes(x=target,y=response,fill=outcome)) +
-  stat_summary(fun.y=mean, geom="bar", position = position_dodge()) +
-  stat_summary(fun.data="mean_cl_boot", geom="errorbar", width=.25, position = position_dodge(.9)) +
-  facet_grid(~cost)
-
 ## linear probability models to confirm we end up in the same place
 M4wayLin <- lmer(response ~ (target+outcome+cost+AgeCat)^4 + (1|ID), data=longStudy5pun)
 drop1(M4wayLin, test='Chisq')
@@ -402,7 +399,6 @@ longStudy5rew2 %>%
 
 
 #### Aggregated across studies ####
-
 # convert to long
 allLong <- raw %>%
   dplyr::select(ID,AgeCentered,Study,AgeinMonths,AgeCat,10:13,22:25) %>%
@@ -438,10 +434,119 @@ allLong %>%
 cohen.d(response ~ target, data=filter(allLong,age=='Young')) 
 cohen.d(response ~ target, data=filter(allLong,age=='Old')) 
 
+#### Study 6 ####
+
+# who thought they were playing alonen versus with others
+mean(Study6$Alone)#0.10
+
+# Evaluation convert to long format, create contrast code for condition so intercept reflects mean effect
+longStudy6 <- Study6 %>%
+  dplyr::select(ID,Condition,Judgment,Preference) %>% 
+  gather(measure,response,Judgment,Preference)  %>%
+  mutate(Cond = ifelse(Condition == 'Impact',.5,-.5))
+
+# sanity check: check balance
+table(longStudy6$measure,longStudy6$Condition)
+
+# fit maximal model
+Mmax <- lmer(response ~ Cond*measure + (1|ID),data=longStudy6)
+summary(Mmax)
+drop1(Mmax,test='Chisq')
+
+# drop 2-way:
+M2way2 <- lmer(response ~ Cond+measure + (1|ID),data=longStudy6)
+summary(M2way2)
+drop1(M2way2,test='Chisq')
+
+# final model
+Mfinal <- lmer(response ~ Cond + (1|ID),data=longStudy6)
+summary(Mfinal)
+confint(Mfinal) # output confidence intervals
+
+# output means for judgment and preference measures in the two conditions
+longStudy6 %>%
+  filter(measure=='Judgment') %>%
+  group_by(Condition) %>%
+  summarise(avg = mean(response))
+longStudy6 %>%
+  filter(measure=='Preference') %>%
+  group_by(Condition) %>%
+  summarise(avg = mean(response))
+
+# Punishment: punish contributor=1, punish free rider=0 
+#Contrast coding the condition variable###
+Study6$Cond <- ifelse(Study6$Condition == 'Impact',.5,-.5)
+
+Study6punish <- glm(Punish ~ Cond,family=binomial, data=Study6)
+summary(Study6punish)
+confint(Study6punish)
+exp(coef(Study6punish)) #compute Odds Ratio
+
+
+# Collaborate
+Study6collaborate <- glm(Collaborate ~ Cond,family=binomial, data=Study6)
+summary(Study6collaborate)
+confint(Study6collaborate) 
+exp(coef(Study6collaborate))
+
+
+#### Supplementa analysis dropping children who beleived they played alone #####
+
+# Evaluation: believers
+Study6Believers<-subset(Study6,Alone==0)
+longStudy6b <- Study6Believers %>%
+  dplyr::select(ID,Condition,Judgment,Preference) %>% 
+  gather(measure,response,Judgment,Preference)  %>%
+  mutate(Cond = ifelse(Condition == 'Impact',.5,-.5))
+
+# sanity check: check balance
+table(longStudy6b$measure,longStudy6b$Condition)
+
+# fit maximal model
+Mmax <- lmer(response ~ Cond*measure + (1|ID),data=longStudy6b)
+summary(Mmax)
+drop1(Mmax,test='Chisq')
+
+# drop 2-way:
+M2way2 <- lmer(response ~ Cond+measure + (1|ID),data=longStudy6b)
+summary(M2way2)
+drop1(M2way2,test='Chisq')
+
+# final model
+Mfinal <- lmer(response ~ Cond + (1|ID),data=longStudy6b)
+summary(Mfinal)
+confint(Mfinal) # output confidence intervals
+
+# output means for judgment and preference measures in the two conditions
+longStudy6b %>%
+  filter(measure=='Judgment') %>%
+  group_by(Condition) %>%
+  summarise(avg = mean(response))
+longStudy6b %>%
+  filter(measure=='Preference') %>%
+  group_by(Condition) %>%
+  summarise(avg = mean(response))
+
+# Punishment: Believers
+#Contrast coding the condition variable###
+longStudy6b$Cond <- ifelse(longStudy6b$Condition == 'Impact',.5,-.5)
+
+Study6punish <- glm(Punish ~ Cond,family=binomial, data=Study6Believers)
+summary(Study6punish)
+confint(Study6punish)
+exp(coef(Study6punish)) #compute Odds Ratio
+
+
+# Collaborate: Believers
+Study6collaborate <- glm(Collaborate ~ Cond,family=binomial, data=Study6Believers)
+summary(Study6collaborate)
+confint(Study6collaborate) 
+exp(coef(Study6collaborate))  #compute Odds Ratio
 
 #### Paper Figures ####
 
-# NOTE: This includes Figure 1 and Figure 7 only
+# NOTE: This includes a subset of figures only
+library(scales)
 
 # Study1
 substrRight <- function(x, n){substr(x, nchar(x)-n+1, nchar(x))}
@@ -455,25 +560,25 @@ longStudy1Graph$Ttype<-factor(longStudy1Graph$Ttype,levels=c("Or","Co"))#Change 
 longStudy1Graph$Ctype<-factor(longStudy1Graph$Ctype,levels=c("FreeRider","Contributor"))#change the order for Ctype
 
 graph1 <- ggplot(longStudy1Graph,aes(x=Ctype, y = response, width=.65, fill = as.factor(Ttype))) +
-  stat_summary(fun.y=mean, geom="bar", size=4, position=position_dodge()) + 
+  stat_summary(fun.y=mean, geom="bar", position=position_dodge()) + 
   stat_summary(fun.data="mean_cl_boot", geom="errorbar",  aes(width=.15), position=position_dodge(.65)) 
-
-graph1<-(graph1 + scale_fill_discrete(breaks=c("Co", "Or"),labels=c("Unintentional Free Riding", "Intentional Free Riding")) +
+graph1
+graph1<-(graph1 +
            theme(legend.title=element_blank()) + 
            scale_x_discrete(breaks=c("Contributor", "FreeRider"),labels=c("Contributor", "Free Rider")) + 
-           coord_cartesian(ylim=c(1,4)) +
+           scale_y_continuous(limits=c(1,4),oob=squish,expand = c(0,0))+
            ylab("Rating (1 = most negative, 4 = most positive)") +
            xlab("Target") +
            theme_bw() + theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
            theme(legend.title=element_blank()) +
-           scale_fill_manual(values=c("#99CC99", "#FFCC99"),breaks=c("Co", "Or"),labels=c("Unintentional Free Riding", "Intentional Free Riding")) +
+           scale_fill_manual(values=c("#99CC99", "#FFCC99"),breaks=c("Co", "Or"),labels=c("Unintentional Free-Riding", "Intentional Free-Riding")) +
            geom_hline(yintercept = 2.5, linetype=2, color='black')+
            guides(fill = guide_legend(reverse = TRUE))+ #reverse the legend order
-           ggtitle("a") + theme(plot.title=element_text(hjust = 0.5, face="bold"))+
-           theme(legend.position=c(0.5,0.98)) +
+           ggtitle("a) 6-10-year-olds") + theme(plot.title=element_text(hjust = "0", face="bold"))+
+           theme(legend.position="top") +
            theme(legend.direction="horizontal")+
-           theme(plot.title = element_text(size = 25, face = "bold") , legend.text=element_text(size=14))+
-           theme(axis.text=element_text(size=14,face="bold"), axis.title=element_text(size=16,face="bold")))
+           theme(plot.title = element_text(size = 12, face = "bold") , legend.text=element_text(size=9))+
+           theme(axis.text=element_text(size=10,face="bold"), axis.title=element_text(size=10,face="bold")))
 graph1
 
 # Study2
@@ -488,34 +593,37 @@ longStudy2Graph$Ttype<-factor(longStudy2Graph$Ttype,levels=c("Or","Co"))#Change 
 longStudy2Graph$Ctype<-factor(longStudy2Graph$Ctype,levels=c("FreeRider","Contributor"))#change the order for Ctype
 
 reordergraph2 <- ggplot(longStudy2Graph,aes(x=Ctype, y = response, width=.65, fill = as.factor(Ttype))) +
-  stat_summary(fun.y=mean, geom="bar", size=4, position=position_dodge()) + 
+  stat_summary(fun.y=mean, geom="bar", position=position_dodge()) + 
   stat_summary(fun.data="mean_cl_boot", geom="errorbar",  aes(width=.15), position=position_dodge(.65)) 
 reordergraph2
 
-#Modify Styles##
-graph2<-(reordergraph2 + scale_fill_discrete(breaks=c("Co", "Or"),labels=c("Unintentional Free Riding", "Intentional Free Riding")) +
+graph2<-(reordergraph2 +
            theme(legend.title=element_blank()) + 
            scale_x_discrete(breaks=c("Contributor", "FreeRider"),labels=c("Contributor", "Free Rider")) + 
-           coord_cartesian(ylim=c(1,4)) +
+           scale_y_continuous(limits=c(1,4),oob=squish,expand = c(0,0))+
            ylab("Rating (1 = most negative, 4 = most positive)") +
            xlab("Target") +
            theme_bw() + theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
            theme(legend.title=element_blank()) +
-           scale_fill_manual(values=c("#99CC99", "#FFCC99"),breaks=c("Co", "Or"),labels=c("Unintentional Free Riding", "Intentional Free Riding")) +
+           scale_fill_manual(values=c("#99CC99", "#FFCC99"),breaks=c("Co", "Or"),labels=c("Unintentional Free-Riding", "Intentional Free-Riding")) +
            geom_hline(yintercept = 2.5, linetype=2, color='black')+
            guides(fill = guide_legend(reverse = TRUE))+ #reverse the legend order
-           ggtitle("b") + theme(plot.title=element_text(hjust = 0.5, face="bold"))+
-           theme(legend.position=c(0.5,0.98)) +
+           ggtitle("b) 4-5-year-olds") + theme(plot.title=element_text(hjust = "0", face="bold"))+
+           theme(legend.position="top") +
            theme(legend.direction="horizontal")+
-           theme(plot.title = element_text(size = 25, face = "bold") , legend.text=element_text(size=14))+
-           theme(axis.text=element_text(size=14,face="bold"), axis.title=element_text(size=16,face="bold")))
+           theme(plot.title = element_text(size = 12, face = "bold") , legend.text=element_text(size=9))+
+           theme(axis.text=element_text(size=10,face="bold"), axis.title=element_text(size=10,face="bold")))
 graph2
 
 
-# figure 7, aggregated
+#save Study1 & 2 graphs into a single image############
+library(grid)
+library(gridExtra)
+study12combined<-(grid.arrange(graph1,graph2,ncol=2,top=textGrob("Children's evaluations of free-riders and contributors in Study 1 and Study 2",gp=gpar(fontsize=12,fontface="bold"))))
+study12combined
 
-#### Final aggregated graph ####
 
+#### aggregated graph ####
 
 allLong$target2<-factor(allLong$target,levels=c("FreeRider","Contributor"))#change the order for Ctype
 allLong$age2<-factor(allLong$age,levels=c("Young","Old"))#change the order for Ctype
@@ -525,8 +633,8 @@ frame <- ggplot(allLong,aes(x=target2,y=response,fill=age2, width=.65)) +
   stat_summary(fun.data="mean_cl_boot", geom="errorbar", aes(width=.15), position=position_dodge(.65))
 
 graph7 <- frame +   theme(legend.title=element_blank()) + 
-  scale_x_discrete(breaks=c("Contributor", "FreeRider"),labels=c("Contributor", "Free Rider")) + 
-  coord_cartesian(ylim=c(1,4)) +
+  scale_x_discrete(breaks=c("Contributor", "FreeRider"),labels=c("Contributor", "Free Rider")) +
+  scale_y_continuous(limits=c(1,4.2),oob=squish,expand = c(0,0))+
   ylab("Rating (1 = most negative, 4 = most positive)") +
   xlab("Target") +
   theme_bw() + theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) +
@@ -535,10 +643,11 @@ graph7 <- frame +   theme(legend.title=element_blank()) +
   geom_hline(yintercept = 2.5, linetype=2, color='black') +
   theme(plot.title=element_text(hjust = 0.5, face="bold")) +
   theme(legend.position=c(0.5,0.98)) +
-  theme(legend.direction="horizontal") +
-  theme(plot.title = element_text(size = 25, face = "bold") , legend.text=element_text(size=14))+
-  theme(axis.text=element_text(size=14,face="bold"), axis.title=element_text(size=16,face="bold")) 
+  theme(legend.direction="horizontal") +  ggtitle("Summary of aggregated data in Studies 1-5")+
+  theme(plot.title = element_text(size = 12, face = "bold") , legend.text=element_text(size=9))+
+  theme(axis.text=element_text(size=10,face="bold"), axis.title=element_text(size=10,face="bold")) 
 graph7
+
 
 
 
